@@ -5,9 +5,9 @@ groups:
     name: Stateless Deduplication (no Redis)
     description: >-
       Uses Cribl's built-in Suppress function to deduplicate flow log events
-      in-memory. No external dependencies required. Suitable for the 15-minute
-      collection schedule where the 1-minute overlap produces a small number
-      of duplicates per collection window.
+      in-memory. No external dependencies required but NOT STATEFUL — dedup
+      state is ephemeral, per-worker, and lost on restart. See pipeline
+      comments for full details on limitations.
     index: 2
     disabled: false
 asyncFuncTimeout: 1000
@@ -17,41 +17,67 @@ functions:
     disabled: null
     conf:
       comment: >-
-        Stateless Deduplication Pipeline (No Redis Required).
+        STATELESS Deduplication Pipeline (No Redis Required).
 
-        This pipeline uses Cribl Stream's built-in Suppress function to
-        deduplicate Azure vNet Flow Log events without any external
-        dependencies like Redis.
+        IMPORTANT: This pipeline is NOT stateful. The Suppress function
+        maintains an in-memory cache that is:
+          - EPHEMERAL: State is lost when the worker process restarts,
+            including during Commit & Deploy operations. The first collection
+            after a restart will pass all events through, including any that
+            overlap with the previous collection window.
+          - PER-WORKER: Each Cribl Stream worker maintains its own independent
+            suppress cache. In a multi-worker deployment, if events from the
+            same source are load-balanced across different workers, duplicates
+            WILL slip through because Worker A has no visibility into Worker B's
+            cache.
+          - NOT PERSISTENT: There is no disk-backed state. If the worker
+            crashes or is restarted, all dedup history is gone.
 
-        How it works:
+        When to use this pipeline:
+          - Single-worker Cribl Stream deployments
+          - Deployments with worker affinity enabled on the collector job
+            (pins source events to a specific worker)
+          - Dev/test environments where occasional duplicates are acceptable
+          - Environments where Redis is not available and the trade-off of
+            occasional duplicates is preferable to the operational overhead
+            of deploying Redis
+
+        When NOT to use this pipeline:
+          - Multi-worker deployments WITHOUT worker affinity (use Redis dedup)
+          - Environments where zero duplicate tolerance is required
+          - High-frequency restart scenarios (CI/CD with frequent deploys)
+
+        For stateful dedup that survives restarts and is shared across workers,
+        use the Redis-based dedup pipelines instead:
+          - Azure_vNet_FlowLogs_Dedup_15m (for 15-minute collector)
+          - Azure_vNet_FlowLogs_Dedup_Redis (for hourly collector)
+
+        How this pipeline works:
         1. After pre-processing, each event's _raw contains a flat JSON with
            the flowTuple, macAddress, time, and other fields that uniquely
            identify a flow record.
         2. We compute a SHA-256 hash of _raw to create a compact unique key.
-        3. The Suppress function maintains an in-memory cache of recently seen
-           keys and drops any event whose key has already been seen within the
-           configured time window.
+        3. The Suppress function checks its in-memory cache for the key:
+           - If NOT seen: event passes through, key is cached with a TTL
+           - If ALREADY seen: event is dropped as a duplicate
+        4. The temporary hash field is cleaned up before output.
 
         Designed for the 15-minute collection schedule (*/15 cron, -16m lookback)
-        where the 1-minute overlap produces duplicate events. The suppress
-        window of 20 minutes covers adjacent collection windows with margin.
+        where the 1-minute overlap between collection windows produces
+        duplicate events.
+
+        Performance vs Redis:
+          - Latency: Microseconds per event (in-memory hash lookup, no I/O)
+            vs 0.5-2ms per event with Redis (network round-trips)
+          - Throughput: Negligibly better than Redis for this use case
+          - Memory: SHA-256 hashes (32 bytes each) x active events x TTL window
+            — typically a few KB to a few MB even at scale
+          - The performance difference is negligible for vNet Flow Log volumes;
+            the choice should be driven by deployment architecture, not performance.
 
         WARNING: This pipeline expects pre-processed events (flowTuples already
-        unrolled). It should be used after the Azure_vNet_FlowLogs_PreProcessing
-        pipeline has run.
-
-        Trade-offs vs Redis dedup:
-        - Pro: No external infrastructure required
-        - Pro: Simpler deployment — works out of the box
-        - Pro: Lower latency — no network round-trips to Redis
-        - Con: State is per-worker and in-memory — not shared across workers
-        - Con: State is lost on worker restart
-        - Con: For very high volume deployments, memory usage may be a concern
-
-        For multi-worker deployments where the same event could land on
-        different workers, consider using the Redis-based dedup pipeline
-        instead, or ensure worker affinity is enabled on the collector job
-        so that events from the same source always go to the same worker.
+        unrolled by Azure_vNet_FlowLogs_PreProcessing). It must run AFTER
+        the PreProcessing pipeline.
   - id: comment
     filter: "true"
     disabled: null
@@ -77,6 +103,7 @@ functions:
     conf:
       comment: >-
         Step 2: Suppress duplicate events using the built-in Suppress function.
+        The Suppress function maintains an IN-MEMORY ONLY cache (not stateful).
         - keyExpr: The field used to identify unique events (__dedup_key)
         - numEventsAllowed: 1 (allow only the first occurrence)
         - suppressPeriodSec: 1200 (20-minute window — covers 15m schedule + margin)
@@ -91,8 +118,8 @@ functions:
       dropEventsMode: true
       keyExpr: "`${__dedup_key}`"
     description: >-
-      Suppress duplicates — allow only 1 event per unique _raw hash within
-      a 20-minute window. Duplicates from the 1-minute overlap are dropped.
+      Suppress duplicates (STATELESS — in-memory only, per-worker, lost on restart).
+      Allows only 1 event per unique _raw hash within a 20-minute window.
     groupId: suppDedup
   - id: comment
     filter: "true"
