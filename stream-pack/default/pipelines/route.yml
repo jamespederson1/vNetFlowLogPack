@@ -1,0 +1,26 @@
+id: default
+groups: {}
+comments: []
+routes:
+  - id: S7a5qI
+    name: AzureFlowLogs Dedup
+    final: true
+    disabled: true
+    pipeline: Azure_vNet_FlowLogs_Dedup_Redis
+    description: ""
+    enableOutputExpression: false
+    outputExpression: null
+    filter: "true"
+    clones: []
+    output: default
+  - id: default
+    name: default
+    final: true
+    disabled: false
+    pipeline: main
+    description: ""
+    enableOutputExpression: false
+    outputExpression: null
+    filter: "true"
+    clones: []
+    output: default

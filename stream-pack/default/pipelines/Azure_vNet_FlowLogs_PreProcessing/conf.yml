@@ -1,0 +1,103 @@
+functions:
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Flow Log Initial Extraction
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      remove:
+        - _raw
+        - _time
+        - source
+  - id: unroll
+    filter: "true"
+    disabled: false
+    conf:
+      srcExpr: flowRecords.flows
+      dstField: flow
+    description: Create one event per element in flowRecords.flows
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: aclID
+          value: flow.aclID
+      remove: []
+    description: Promote aclID from the current flow object and drop the bulky
+      flowRecords field.
+  - id: unroll
+    filter: "true"
+    disabled: false
+    conf:
+      srcExpr: flow.flowGroups
+      dstField: flowGroup
+    description: Create one event per flowGroup inside the current flow object
+  - id: eval
+    filter: "true"
+    disabled: null
+    conf:
+      remove:
+        - flow
+        - flowRecords
+  - id: unroll
+    filter: "true"
+    disabled: false
+    conf:
+      srcExpr: flowGroup.flowTuples
+      dstField: flowTuple
+    description: Create one event per flowTuple string
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: rule
+          value: flowGroup.rule
+      remove:
+        - flowGroup
+    description: Promote rule, clean up temporary fields.
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Serialize Back into Raw
+  - id: serialize
+    filter: "true"
+    disabled: null
+    conf:
+      type: json
+      dstField: _raw
+      fields:
+        - aclID
+        - category
+        - flowLogGUID
+        - flowLogResourceID
+        - flowLogVersion
+        - flowTuple
+        - host
+        - macAddress
+        - operationName
+        - rule
+        - targetResourceID
+        - time
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Cleanup
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      keep:
+        - _raw
+      remove:
+        - "*"
+    description: This will eliminate some of the large fields to minimize event bloat
+streamtags:
+  - cpe
+groups: {}

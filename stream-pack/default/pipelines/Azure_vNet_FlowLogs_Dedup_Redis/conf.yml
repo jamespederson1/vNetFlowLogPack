@@ -1,0 +1,153 @@
+output: default
+streamtags: []
+groups:
+  KMhfUv:
+    name: Define Parameter and create Redis key
+    description: Aggregation thresholds
+    index: 2
+    disabled: false
+  dlLbUK:
+    name: Set Redis fields
+    index: 4
+    disabled: false
+    description: Populate Redis fields and aggregate
+asyncFuncTimeout: 1000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Warning!!! This pipeline does not unroll the flowtuples into individual
+        events. Pre-processing required!!!
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: "This pipeline does a simple deduplication to handle Collector
+        overlapping schedules. It takes the _raw string and creates a hashed
+        value to store as a key in Redis. It sends the first event seen
+        downstream. It then compares the next event to the Redis cache to see if
+        the next event has already been sent and if the key exists it drops the
+        event. "
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Sets the Agg period to define the length time (tty) the key will live
+        in Redis. Default is 2 hours but can be set according to your collector
+        schedule.
+    groupId: KMhfUv
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: Agg_Period_High
+          value: "7200"
+    description: Agg Thresholds
+    groupId: KMhfUv
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: "Create hash of _raw for use as the key in Redis with sha256 algorithm "
+    groupId: KMhfUv
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: __network_key
+          value: C.Mask.sha256(_raw)
+    groupId: KMhfUv
+    description: Aggregate Field
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Redis interactions section
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: |-
+        Get results of hsetnx to see if the key exists in Redis already.
+        If key exists, result field is set to 1
+        If key does not exist, result field set to 0
+    groupId: dlLbUK
+  - id: redis
+    filter: "true"
+    disabled: false
+    conf:
+      commands:
+        - outField: __hsetnx_results
+          command: hsetnx
+          keyExpr: __network_key
+          argsExpr: "['count',1]"
+      deploymentType: standalone
+      authType: none
+      maxBlockSecs: 60
+      tlsOptions:
+        rejectUnauthorized: false
+      url: "'redis://10.198.32.64:6379'"
+      password: changeme
+      textSecret: redis_secret_text
+    description: Create key in Redis
+    groupId: dlLbUK
+  - id: redis
+    filter: __hsetnx_results==1
+    disabled: false
+    conf:
+      commands:
+        - outField: __expire_results
+          command: expire
+          keyExpr: __network_key
+          argsExpr: Agg_Period_High
+      deploymentType: standalone
+      authType: none
+      maxBlockSecs: 60
+      tlsOptions:
+        rejectUnauthorized: false
+      rootNodes:
+        - host: "'10.198.32.63'"
+          port: 6379
+      url: "'redis://10.198.32.64:6379'"
+      password: changeme
+      textSecret: redis_secret_text
+    description: If this is a new hash, add set expire time (ttl) based on
+      Agg_Period_high previously defined
+    groupId: dlLbUK
+  - id: redis
+    filter: __hsetnx_results==0
+    disabled: false
+    conf:
+      commands:
+        - outField: __hincrby_count
+          command: hincrby
+          keyExpr: __network_key
+          argsExpr: "['count',1]"
+        - outField: __time_to_live
+          command: pttl
+          keyExpr: __network_key
+      deploymentType: standalone
+      authType: none
+      maxBlockSecs: 60
+      tlsOptions:
+        rejectUnauthorized: false
+      url: "'redis://10.198.32.64:6379'"
+      password: changeme
+      textSecret: redis_secret_text
+    description: If the hash already exists, increment the event count by 1
+    groupId: dlLbUK
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Drop section to determine if the event has already been sent downstream
+  - id: drop
+    filter: __hsetnx_results==0
+    disabled: false
+    conf: {}
+    final: false
+    description: If event is seen again and is inRedis, drop event and do not
+      forward downstream

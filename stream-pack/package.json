@@ -1,11 +1,1 @@
-{
-  "name": "cribl-stream-vnet-flow-log",
-  "version": "0.1.0",
-  "author": "James Pederson",
-  "description": "Azure vNet Flow Log collection and processing pack for Cribl Stream. Ingests, parses, and flattens vNet Flow Log data.",
-  "displayName": "Azure vNet Flow Log Collector",
-  "tags": {
-    "streamtags": ["azure", "vnet", "flow-logs", "network"]
-  },
-  "exports": ["*"]
-}
+{"name":"AzureFlowLogs","version":"0.0.3","minLogStreamVersion":"4.14.0","author":"James Pederson","displayName":"Azure_vNet_FlowLogs","tags":{"streamtags":["Azure","Microsoft","Azure_vNet","AzureFlowLogs","FlowLogs","Redis","ThreatIntel"],"dataType":["logs"],"useCase":["routing","reduction","filtering","enrichment","aggregation"]}}

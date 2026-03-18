@@ -1,0 +1,21 @@
+Azure_vNet_FlowLogs:
+  lib: custom
+  minRawLength: 256
+  rules:
+    - condition: "true"
+      type: azure_flowlog
+      timestampAnchorRegex: /^/
+      timestamp:
+        type: auto
+        length: 150
+      timestampTimezone: local
+      timestampEarliest: -420weeks
+      timestampLatest: +1week
+      maxEventBytes: 512000
+      disabled: false
+      parserEnabled: false
+      shouldUseDataRaw: false
+      jsonExtractAll: true
+      eventBreakerRegex: /[\n\r]+(?!\s)/
+      name: Azure_vNet_Flow_Log
+      jsonArrayField: records

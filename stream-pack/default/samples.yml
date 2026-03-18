@@ -1,0 +1,18 @@
+RnsFWG:
+  sampleName: Azure_vNet_Unbroken.log
+  ttl: 0
+  created: 1759650815698
+  size: 1170701
+  numEvents: 26
+yKkbT6:
+  sampleName: Azure_vNet_Broken_1.log
+  ttl: 0
+  created: 1759655862049
+  size: 4846
+  numEvents: 1
+YkNkNQ:
+  sampleName: Azure_vNet_Pre-processed_1.log
+  ttl: 0
+  created: 1759656237516
+  size: 3137
+  numEvents: 1
