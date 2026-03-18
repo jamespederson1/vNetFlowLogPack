@@ -1,0 +1,25 @@
+# Secrets and credentials
+.env
+*.key
+*.pem
+*secret*
+*password*
+
+# OS files
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Build artifacts
+dist/
+*.crbl
+
+# Logs
+*.log

@@ -1,0 +1,13 @@
+{
+  "name": "cribl-search-vnet-flow-log",
+  "version": "0.1.0",
+  "author": "James Pederson",
+  "description": "Azure vNet Flow Log dashboards for Cribl Search",
+  "displayName": "Azure vNet Flow Log Dashboards",
+  "tags": {
+    "streamtags": []
+  },
+  "exports": [
+    "*"
+  ]
+}

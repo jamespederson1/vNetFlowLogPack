@@ -1,0 +1,11 @@
+{
+  "name": "cribl-stream-vnet-flow-log",
+  "version": "0.1.0",
+  "author": "James Pederson",
+  "description": "Azure vNet Flow Log collection and processing pack for Cribl Stream. Ingests, parses, and flattens vNet Flow Log data.",
+  "displayName": "Azure vNet Flow Log Collector",
+  "tags": {
+    "streamtags": ["azure", "vnet", "flow-logs", "network"]
+  },
+  "exports": ["*"]
+}
