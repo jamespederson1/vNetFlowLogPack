@@ -2,12 +2,30 @@ id: default
 groups: {}
 comments: []
 routes:
+  - id: v15mDedup
+    name: AzureFlowLogs 15m Dedup
+    final: true
+    disabled: true
+    pipeline: Azure_vNet_FlowLogs_Dedup_15m
+    description: "Deduplication route for the 15-minute collection schedule
+      (*/15 cron with -16m lookback). Enable this route when using the
+      Azure_vNet_FlowLogs_15m_Dedup collector to remove duplicate events
+      from the 1-minute overlap window. Uses Redis for stateful dedup."
+    enableOutputExpression: false
+    outputExpression: null
+    filter: "true"
+    clones: []
+    output: default
   - id: S7a5qI
-    name: AzureFlowLogs Dedup
+    name: AzureFlowLogs Dedup (Redis - Hourly)
     final: true
     disabled: true
     pipeline: Azure_vNet_FlowLogs_Dedup_Redis
-    description: ""
+    description: "Deduplication route for the hourly collection schedule
+      (15 * * * * cron with -75m lookback). This route is typically not
+      needed for the hourly collector since the -75m lookback with @h latest
+      produces no overlapping windows. Enable only if using a custom schedule
+      that may produce overlaps."
     enableOutputExpression: false
     outputExpression: null
     filter: "true"

@@ -1,0 +1,152 @@
+output: default
+streamtags: []
+groups:
+  v15mDup:
+    name: Define Parameter and create Redis key
+    description: Dedup parameters for 15-minute collection schedule
+    index: 2
+    disabled: false
+  v15mRedis:
+    name: Set Redis fields
+    index: 4
+    disabled: false
+    description: Redis lookup and dedup for 15-minute overlap
+asyncFuncTimeout: 1000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        15-Minute Collection Deduplication Pipeline.
+        This pipeline handles deduplication for the Azure_vNet_FlowLogs_15m_Dedup
+        collector which runs every 15 minutes (*/15 * * * *) with a 16-minute
+        lookback (-16m). The 1-minute overlap between collection windows can
+        produce duplicate flow log events.
+        
+        This pipeline creates a SHA-256 hash of each pre-processed _raw event
+        and stores it as a key in Redis. If the key already exists, the event
+        is a duplicate and is dropped. New events are sent downstream.
+        
+        WARNING: This pipeline expects pre-processed events (flowTuples already
+        unrolled). It should be used after the Azure_vNet_FlowLogs_PreProcessing
+        pipeline has run.
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Sets the TTL for Redis keys. For a 15-minute schedule with 1-minute
+        overlap, a 20-minute (1200 second) TTL provides sufficient margin
+        to catch duplicates across adjacent collection windows while keeping
+        the Redis footprint small.
+    groupId: v15mDup
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: Agg_Period_High
+          value: "1200"
+    description: TTL for Redis keys — 20 minutes (covers 15m schedule + margin)
+    groupId: v15mDup
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Create SHA-256 hash of _raw for use as the dedup key in Redis
+    groupId: v15mDup
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: __network_key
+          value: C.Mask.sha256(_raw)
+    groupId: v15mDup
+    description: Generate SHA-256 hash of event for dedup key
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Redis dedup operations
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: |-
+        Use hsetnx to atomically check and set the key:
+        - Returns 1 if key was newly created (first time seeing this event)
+        - Returns 0 if key already exists (duplicate event)
+    groupId: v15mRedis
+  - id: redis
+    filter: "true"
+    disabled: false
+    conf:
+      commands:
+        - outField: __hsetnx_results
+          command: hsetnx
+          keyExpr: __network_key
+          argsExpr: "['count',1]"
+      deploymentType: standalone
+      authType: none
+      maxBlockSecs: 60
+      tlsOptions:
+        rejectUnauthorized: false
+      url: "'redis://10.198.32.64:6379'"
+      password: changeme
+      textSecret: redis_secret_text
+    description: Check if event hash exists in Redis; create if new
+    groupId: v15mRedis
+  - id: redis
+    filter: __hsetnx_results==1
+    disabled: false
+    conf:
+      commands:
+        - outField: __expire_results
+          command: expire
+          keyExpr: __network_key
+          argsExpr: Agg_Period_High
+      deploymentType: standalone
+      authType: none
+      maxBlockSecs: 60
+      tlsOptions:
+        rejectUnauthorized: false
+      url: "'redis://10.198.32.64:6379'"
+      password: changeme
+      textSecret: redis_secret_text
+    description: New event — set TTL on the Redis key (20 minutes)
+    groupId: v15mRedis
+  - id: redis
+    filter: __hsetnx_results==0
+    disabled: false
+    conf:
+      commands:
+        - outField: __hincrby_count
+          command: hincrby
+          keyExpr: __network_key
+          argsExpr: "['count',1]"
+        - outField: __time_to_live
+          command: pttl
+          keyExpr: __network_key
+      deploymentType: standalone
+      authType: none
+      maxBlockSecs: 60
+      tlsOptions:
+        rejectUnauthorized: false
+      url: "'redis://10.198.32.64:6379'"
+      password: changeme
+      textSecret: redis_secret_text
+    description: Duplicate event — increment count for observability
+    groupId: v15mRedis
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Drop duplicate events that have already been sent downstream
+  - id: drop
+    filter: __hsetnx_results==0
+    disabled: false
+    conf: {}
+    final: false
+    description: Drop duplicate — event hash already exists in Redis
