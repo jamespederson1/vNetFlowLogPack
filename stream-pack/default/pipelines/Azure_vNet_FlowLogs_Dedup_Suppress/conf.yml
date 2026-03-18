@@ -1,0 +1,113 @@
+output: default
+streamtags: []
+groups:
+  suppDedup:
+    name: Stateless Deduplication (no Redis)
+    description: >-
+      Uses Cribl's built-in Suppress function to deduplicate flow log events
+      in-memory. No external dependencies required. Suitable for the 15-minute
+      collection schedule where the 1-minute overlap produces a small number
+      of duplicates per collection window.
+    index: 2
+    disabled: false
+asyncFuncTimeout: 1000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Stateless Deduplication Pipeline (No Redis Required).
+
+        This pipeline uses Cribl Stream's built-in Suppress function to
+        deduplicate Azure vNet Flow Log events without any external
+        dependencies like Redis.
+
+        How it works:
+        1. After pre-processing, each event's _raw contains a flat JSON with
+           the flowTuple, macAddress, time, and other fields that uniquely
+           identify a flow record.
+        2. We compute a SHA-256 hash of _raw to create a compact unique key.
+        3. The Suppress function maintains an in-memory cache of recently seen
+           keys and drops any event whose key has already been seen within the
+           configured time window.
+
+        Designed for the 15-minute collection schedule (*/15 cron, -16m lookback)
+        where the 1-minute overlap produces duplicate events. The suppress
+        window of 20 minutes covers adjacent collection windows with margin.
+
+        WARNING: This pipeline expects pre-processed events (flowTuples already
+        unrolled). It should be used after the Azure_vNet_FlowLogs_PreProcessing
+        pipeline has run.
+
+        Trade-offs vs Redis dedup:
+        - Pro: No external infrastructure required
+        - Pro: Simpler deployment — works out of the box
+        - Pro: Lower latency — no network round-trips to Redis
+        - Con: State is per-worker and in-memory — not shared across workers
+        - Con: State is lost on worker restart
+        - Con: For very high volume deployments, memory usage may be a concern
+
+        For multi-worker deployments where the same event could land on
+        different workers, consider using the Redis-based dedup pipeline
+        instead, or ensure worker affinity is enabled on the collector job
+        so that events from the same source always go to the same worker.
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Step 1: Generate a SHA-256 hash of _raw to use as the dedup key.
+        This captures the full identity of the pre-processed event including
+        flowTuple, macAddress, time, aclID, rule, and all other fields.
+        Using a hash keeps the suppress key compact and fixed-length.
+    groupId: suppDedup
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: __dedup_key
+          value: C.Mask.sha256(_raw)
+    description: Compute SHA-256 hash of _raw for dedup key
+    groupId: suppDedup
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Step 2: Suppress duplicate events using the built-in Suppress function.
+        - keyExpr: The field used to identify unique events (__dedup_key)
+        - numEventsAllowed: 1 (allow only the first occurrence)
+        - suppressPeriodSec: 1200 (20-minute window — covers 15m schedule + margin)
+        - dropEventsMode: true (drop duplicates rather than marking them)
+    groupId: suppDedup
+  - id: suppress
+    filter: "true"
+    disabled: false
+    conf:
+      allow: 1
+      suppressPeriodSec: 1200
+      dropEventsMode: true
+      keyExpr: "`${__dedup_key}`"
+    description: >-
+      Suppress duplicates — allow only 1 event per unique _raw hash within
+      a 20-minute window. Duplicates from the 1-minute overlap are dropped.
+    groupId: suppDedup
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Step 3: Clean up the temporary dedup key field before sending
+        events downstream. The __dedup_key field was only needed for the
+        suppress function and should not be included in the output.
+    groupId: suppDedup
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      remove:
+        - __dedup_key
+    description: Remove temporary __dedup_key field from output events
+    groupId: suppDedup

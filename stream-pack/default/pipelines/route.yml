@@ -2,15 +2,33 @@ id: default
 groups: {}
 comments: []
 routes:
+  - id: v15mSuppDedup
+    name: AzureFlowLogs 15m Dedup (Suppress - No Redis)
+    final: true
+    disabled: true
+    pipeline: Azure_vNet_FlowLogs_Dedup_Suppress
+    description: "Stateless deduplication route for the 15-minute collection
+      schedule using Cribl's built-in Suppress function. No external Redis
+      required. Enable this route as an alternative to the Redis-based dedup
+      when you want a simpler deployment with no external dependencies.
+      Note: dedup state is per-worker and in-memory — not shared across
+      workers. For multi-worker deployments, enable worker affinity on the
+      collector job or use the Redis-based dedup instead."
+    enableOutputExpression: false
+    outputExpression: null
+    filter: "true"
+    clones: []
+    output: default
   - id: v15mDedup
-    name: AzureFlowLogs 15m Dedup
+    name: AzureFlowLogs 15m Dedup (Redis)
     final: true
     disabled: true
     pipeline: Azure_vNet_FlowLogs_Dedup_15m
     description: "Deduplication route for the 15-minute collection schedule
-      (*/15 cron with -16m lookback). Enable this route when using the
-      Azure_vNet_FlowLogs_15m_Dedup collector to remove duplicate events
-      from the 1-minute overlap window. Uses Redis for stateful dedup."
+      (*/15 cron with -16m lookback) using Redis for stateful dedup shared
+      across workers. Enable this route when using the
+      Azure_vNet_FlowLogs_15m_Dedup collector and you have Redis available.
+      Preferred for multi-worker deployments."
     enableOutputExpression: false
     outputExpression: null
     filter: "true"
